@@ -30,7 +30,8 @@ source ~/.zshrc
 ```
 
 ## Usage
-Once you have detected a request to a GraphQL endpoint, you could copy-paste it to the request.txt (Burp Suite's format), the `-r` is to determine the `.txt` file of your request and the `=t` one is for the time in seconds between each authorization check request. 
+Once you have detected a request to a GraphQL endpoint, run `graphql-auth-tester --help`. 
+- ⚠️ The `request.txt` must be in Burp Suite's format.
 
 If you want to perform unauthenticated checks, make sure to remove the neccesary headers e.g `Cookie:` || `Authorization:`. 
 
