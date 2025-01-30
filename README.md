@@ -23,7 +23,7 @@ Make sure `$HOME/go/bin/` is in your `$PATH`:
 export PATH=$HOME/go/bin:$PATH
 ```
 
-To do this permanently, you can add it your `.bashrc` or `.zshrc`:
+To do this permanently, you can add it to your `.bashrc` or `.zshrc`:
 ```sh
 echo 'export PATH=$HOME/go/bin:$PATH' >> ~/.zshrc
 source ~/.zshrc
