@@ -18,6 +18,17 @@ You can install the tool directly using `go install`:
 go install github.com/ScarlyCodex/graphql-auth-tester@latest
 ```
 
+Make sure `$HOME/go/bin/` is in your `$PATH`:
+```sh
+export PATH=$HOME/go/bin:$PATH
+```
+
+To do this permanently, you can add it your `.bashrc` or `.zshrc`:
+```sh
+echo 'export PATH=$HOME/go/bin:$PATH' >> ~/.zshrc
+source ~/.zshrc
+```
+
 ## Usage
 Once you have detected a request to a GraphQL endpoint, you could copy-paste it to the request.txt (Burp Suite's format), the `-r` is to determine the `.txt` file of your request and the `=t` one is for the time in seconds between each authorization check request. 
 
