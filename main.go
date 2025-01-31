@@ -261,14 +261,20 @@ func parseRequestFile(filePath string) (string, map[string]string, string, error
 		return "", nil, "", err
 	}
 
-	// ✅ **Si el endpoint no tiene `http://` o `https://`, reconstruirlo usando `Host`**
-	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		if host, exists := headers["Host"]; exists {
-			endpoint = "https://" + host + endpoint
-		} else {
-			return "", nil, "", fmt.Errorf("❌ Invalid endpoint: %s (no Host header found)", endpoint)
-		}
-	}
+	// ✅ Si el endpoint no tiene `http://` o `https://`, detectar el protocolo
+        if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+        if host, exists := headers["Host"]; exists {
+            // Detectar si el puerto sugiere HTTP o HTTPS
+            if strings.Contains(host, ":443") || strings.HasSuffix(host, "https") {
+                endpoint = "https://" + host + endpoint
+            } else {
+                endpoint = "http://" + host + endpoint  // 🔥 Ahora usa HTTP si es necesario
+            }
+        } else {
+            return "", nil, "", fmt.Errorf("invalid endpoint: %s, no Host header found", endpoint)
+        }
+    }
+    
 
 	// 🔥 **Si el endpoint sigue vacío, lanzar error claro**
 	if endpoint == "" {
