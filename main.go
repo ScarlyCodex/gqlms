@@ -54,7 +54,7 @@ var deniedMessages = []string{
 		"UNAUTHORIZED",
 }
 
-// ✅ Imprimir el banner en color magenta
+// ✅ Banner
 func printBanner() {
         color.Magenta(`
  #####   #####  #                     
@@ -243,7 +243,7 @@ func parseRequestFile(filePath string) (string, map[string]string, string, error
 			continue
 		}
 
-		// 🔥 Extraer el endpoint de la línea "POST /api/graphql HTTP/2"
+		// Extraer el endpoint de la línea "POST /api/graphql HTTP/2"
 		if strings.HasPrefix(line, "POST") {
 			parts := strings.Fields(line)
 			if len(parts) > 1 {
@@ -268,7 +268,7 @@ func parseRequestFile(filePath string) (string, map[string]string, string, error
             if strings.Contains(host, ":443") || strings.HasSuffix(host, "https") {
                 endpoint = "https://" + host + endpoint
             } else {
-                endpoint = "http://" + host + endpoint  // 🔥 Ahora usa HTTP si es necesario
+                endpoint = "http://" + host + endpoint
             }
         } else {
             return "", nil, "", fmt.Errorf("invalid endpoint: %s, no Host header found", endpoint)
@@ -276,7 +276,7 @@ func parseRequestFile(filePath string) (string, map[string]string, string, error
     }
     
 
-	// 🔥 **Si el endpoint sigue vacío, lanzar error claro**
+	// **Si el endpoint sigue vacío, lanzar error claro**
 	if endpoint == "" {
 		return "", nil, "", fmt.Errorf("❌ No valid endpoint extracted from request.txt")
 	}
