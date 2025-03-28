@@ -32,6 +32,8 @@ source ~/.zshrc
 ## Usage
 Once you have detected a request to a GraphQL endpoint, run `graphql-auth-tester --help`. 
 - ⚠️ The `request.txt` must be in Burp Suite's format.
+- The `-t` flag allows you to set the number of concurrent threads the tool will use to send requests.
+This can speed up the testing process significantly, especially on endpoints that respond quickly or when testing large sets of payloads.
 
 If you want to perform unauthenticated checks, make sure to remove the neccesary headers e.g `Cookie:` || `Authorization:`. 
 
