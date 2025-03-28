@@ -8,8 +8,37 @@ GraphQL Authorization Tester is a tool that automates the testing of GraphQL mut
 - Identify allowed and forbidden mutations.  
 - Works with any GraphQL endpoint.  
 - Easy to install and use.  
-
+- Easily integrates with Burp Suite for proxying and debugging, with no additional configuration required.
 ---
+
+**🔁 Traffic Flow Diagram**
+```
+┌────────────────────┐
+│  graphql-auth-tester│
+│     (this tool)     │
+└────────┬───────────┘
+         │
+         ▼
+┌────────────────────┐
+│    Burp Suite       │  ← Intercepts & logs the requests
+│  (Proxy: 127.0.0.1) │
+└────────┬───────────┘
+         │
+         ▼
+┌────────────────────┐
+│   SSH Tunnel (SOCKS)│  ← Created with: ssh -D 127.0.0.1:9001 ...
+│  (127.0.0.1:9001)   │
+└────────┬───────────┘
+         │
+         ▼
+┌────────────────────┐
+│   Target Web App    │
+│  (GraphQL Endpoint) │
+└────────────────────┘
+```
+The tool automatically extracts the target endpoint, headers, and body from the request file — allowing you to replay traffic exactly as Burp Suite captured it.
+
+If Burp Suite is set up to listen on a proxy (e.g., 127.0.0.1:8080) and is configured to forward traffic through a SOCKS proxy (such as an SSH tunnel), your requests will seamlessly be visible in Burp without any extra flags.
 
 ## 📥 Installation  
 You can install the tool directly using `go install`:  
@@ -32,8 +61,16 @@ source ~/.zshrc
 ## Usage
 Once you have detected a request to a GraphQL endpoint, run `graphql-auth-tester --help`. 
 - ⚠️ The `request.txt` must be in Burp Suite's format.
-- The `-t` flag allows you to set the number of concurrent threads the tool will use to send requests.
-This can speed up the testing process significantly, especially on endpoints that respond quickly or when testing large sets of payloads.
+- Use `-r` to specify the path to your raw HTTP request file, e.g.:
+  ```sh
+  graphql-auth-tester -r request.txt
+  ```
+- Use `-t` to define the delay between each request in seconds (default is 1).
+  ```sh
+  graphql-auth-tester -r request.txt -t 2
+  ```
+This delay helps avoid rate-limiting or detection during testing by spreading out the requests.
+Set it to 0 if you want the fastest possible execution (⚠️ not recommended on production targets).
 
 If you want to perform unauthenticated checks, make sure to remove the neccesary headers e.g `Cookie:` || `Authorization:`. 
 
