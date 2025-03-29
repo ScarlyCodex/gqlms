@@ -46,7 +46,7 @@ If Burp Suite is set up to listen on a proxy (e.g., 127.0.0.1:8080) and is confi
 You can install the tool directly using `go install`:  
 
 ```sh
-go install github.com/ScarlyCodex/graphql-auth-tester@latest
+go install github.com/ScarlyCodex/gqlms@latest
 ```
 
 Make sure `$HOME/go/bin/` is in your `$PATH`:
@@ -61,7 +61,7 @@ source ~/.zshrc
 ```
 
 ## Usage
-Once you have detected a request to a GraphQL endpoint, run `graphql-auth-tester --help`. 
+Once you have detected a request to a GraphQL endpoint, run `gqlms --help`. 
 - ⚠️ The `request.txt` must be in Burp Suite's format.
 - Use `-r` to specify the path to your raw HTTP request file, e.g.:
   ```sh
