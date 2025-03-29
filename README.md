@@ -68,11 +68,11 @@ Once you have detected a request to a GraphQL endpoint, run `graphql-auth-tester
 - ⚠️ The `request.txt` must be in Burp Suite's format.
 - Use `-r` to specify the path to your raw HTTP request file, e.g.:
   ```sh
-  graphql-auth-tester -r request.txt
+  gqlms -r request.txt
   ```
 - Use `-t` to define the delay between each request in seconds (default is 1).
   ```sh
-  graphql-auth-tester -r request.txt -t 2
+  gqlms -r request.txt -t 0
   ```
 This delay helps avoid rate-limiting or detection during testing by spreading out the requests.
 Set it to 0 if you want the fastest possible execution (⚠️ not recommended on production targets).
@@ -81,7 +81,7 @@ If you want to perform unauthenticated checks, make sure to remove the neccesary
 
 Finally:
 ```sh
-graphql-auth-tester -r request.txt -t 7
+gqlms -r request.txt -t 5
 ```
 
 ### Note
