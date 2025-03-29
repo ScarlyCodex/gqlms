@@ -1,4 +1,4 @@
-module github.com/ScarlyCodex/graphql-auth-tester
+module github.com/ScarlyCodex/gqlms
 
 go 1.18
 
