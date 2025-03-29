@@ -13,9 +13,6 @@ GraphQL Authorization Tester is a tool that automates the testing of GraphQL mut
 
 **🔁 Traffic Flow Diagram**
 ```
-### 🔁 Traffic Flow Diagram
-
-```text
 ┌─────────────────────────────┐
 │     graphql-auth-tester     │
 │         (this tool)         │
