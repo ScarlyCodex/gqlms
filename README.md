@@ -61,7 +61,7 @@ source ~/.zshrc
 ```
 
 ## Usage
-Once you have detected a request to a GraphQL endpoint, run `gqlms --help`. 
+Once you have detected a POST request to a GraphQL endpoint, run `gqlms --help`. 
 - ⚠️ The `request.txt` must be in Burp Suite's format.
 - Use `-r` to specify the path to your raw HTTP request file, e.g.:
   ```sh
