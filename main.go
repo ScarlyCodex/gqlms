@@ -11,6 +11,7 @@ import (
         "os"
         "strings"
         "time"
+        "net/url"
 
         "github.com/fatih/color"
 )
@@ -196,25 +197,33 @@ func containsDeniedMessage(resp *http.Response) bool {
 
 // ✅ Enviar request HTTP
 func sendRequest(endpoint string, headers map[string]string, payload []byte) (*http.Response, error) {
-        client := &http.Client{}
-        req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(payload))
-        if err != nil {
-                return nil, err
-        }
+	proxyUrl, _ := url.Parse("http://127.0.0.1:8080")
 
-        for key, value := range headers {
-                req.Header.Set(key, value)
-        }
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyUrl),
+		},
+	}
 
-        resp, err := client.Do(req)
-        if err != nil {
-                return nil, err
-        }
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(payload))
+	if err != nil {
+		return nil, err
+	}
 
-        responseBody, _ := io.ReadAll(resp.Body)
-        resp.Body = io.NopCloser(bytes.NewBuffer(responseBody)) // Restaurar el body
-        return resp, nil
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	responseBody, _ := io.ReadAll(resp.Body)
+	resp.Body = io.NopCloser(bytes.NewBuffer(responseBody))
+	return resp, nil
 }
+
 
 // ✅ Leer y procesar el archivo `request.txt`
 func parseRequestFile(filePath string) (string, map[string]string, string, error) {
