@@ -91,8 +91,10 @@ func main() {
         }
 
         if _, exists := headers["Authorization"]; !exists {
-                fmt.Println("[!] Warning: No Authorization header found. Mutations may fail.")
-        }
+                fmt.Println("[!] → Unauthenticated mode")
+            } else {
+                fmt.Println("[!] → Authenticated mode")
+            }
 
         mutations := getMutations(endpoint, headers)
         testMutations(mutations, endpoint, headers, *delay, baseRequestBody)
