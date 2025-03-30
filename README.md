@@ -30,7 +30,9 @@ source ~/.zshrc
 
 ## Usage
 Once you have detected a POST request to a GraphQL endpoint, run `gqlms --help`. 
-- ⚠️ The `request.txt` must be in Burp Suite's or CAIDO's format.
+- ⚠️ The `request.txt` must be in raw HTTP format as exported from tools like Burp Suite, CAIDO, or similar.
+
+#### Required Options
 - Use `-r` to specify the path to your raw HTTP request file, e.g.:
   ```sh
   gqlms -r request.txt
@@ -39,14 +41,28 @@ Once you have detected a POST request to a GraphQL endpoint, run `gqlms --help`.
   ```sh
   gqlms -r request.txt -t 0
   ```
-This delay helps avoid rate-limiting or detection during testing by spreading out the requests.
-Set it to 0 if you want the fastest possible execution (⚠️ not recommended on production targets).
+This delay helps avoid rate-limiting or detection by spreading out the requests.
+Set it to 0 for fastest execution — ⚠️ Not recommended on production targets.
 
-If you want to perform unauthenticated checks, make sure to remove the neccesary headers e.g `Cookie:` || `Authorization:`. 
+#### Auth Mode
+If you want to perform unauthenticated checks, make sure to remove authentication headers such as:
+  - `Authorization`
+  - `Cookie`
 
-Finally:
+#### Proxy Modes
+You can optionally route all requests through a proxy (e.g. Burp Suite or another proxy server):
+
+**🔹 No Proxy (default)**
 ```sh
-gqlms -r request.txt -t 5
+gqlms -r request.txt -t 1
+```
+**🔹 Use default proxy (`http://127.0.0.1:8080`)**
+```sh
+gqlms -r request.txt -t 2 -proxy=
+```
+**🔹 Use a custom proxy**
+```sh
+gqlms -r request.txt -t 3 -proxy=http://192.168.1.100:8888
 ```
 ## 🔐 Authorization Logic in GraphQL Endpoints
 
