@@ -1,6 +1,6 @@
 # 🔥 GraphQL Authorization Tester  
 
-### 🚀 Description  
+## 🚀 Description  
 GraphQL Authorization Tester is a tool that automates the testing of GraphQL mutations to determine whether they are allowed or restricted.  
 
 ✅ **Features:**  
@@ -9,38 +9,6 @@ GraphQL Authorization Tester is a tool that automates the testing of GraphQL mut
 - Works with any GraphQL endpoint.  
 - Easy to install and use.  
 - Easily integrates with Burp Suite, CAIDO, or any toolset you use for proxying and debugging, with no additional configuration required.
----
-
-**🔁 Traffic Flow Diagram**
-```
-┌─────────────────────────────┐
-│     graphql-auth-tester     │
-│         (this tool)         │
-└──────────────┬──────────────┘
-               │
-               ▼
-┌─────────────────────────────┐
-│         Burp Suite          │ ◄── Intercepts & logs requests
-│      (Proxy: 127.0.0.1)     │
-└──────────────┬──────────────┘
-               │
-               ▼
-┌─────────────────────────────┐
-│      SSH Tunnel (SOCKS)     │ ◄── Created with:  
-│     ssh -D 127.0.0.1:<PORT> │
-└──────────────┬──────────────┘
-               │
-               ▼
-┌─────────────────────────────┐
-│     Target Web App (API)    │
-│     (GraphQL Endpoint)      │
-└─────────────────────────────┘
-
-
-```
-The tool automatically extracts the target endpoint, headers, and body from the request file — allowing you to replay traffic exactly as Burp Suite captured it.
-
-If your toolset is set up to listen on a proxy (e.g., 127.0.0.1:8080) and is configured to forward traffic through a SOCKS proxy (such as an SSH tunnel), your requests will seamlessly be visible in Burp without any extra flags.
 
 ## 📥 Installation  
 You can install the tool directly using `go install`:  
@@ -80,6 +48,96 @@ Finally:
 ```sh
 gqlms -r request.txt -t 5
 ```
+## 🔐 Authorization Logic in GraphQL Endpoints
 
-### Note
+### Is this Authorization Logic Always Applicable in GraphQL Endpoints?
+##### Yes – Generally True Across All GraphQL Implementations
+
+While the exact mechanics may vary depending on the implementation (Apollo, Graphene, Hasura, Sangria, etc.), the underlying authorization model follows a consistent architecture.
+
+---
+**🧱 Standard Execution Layers in GraphQL**
+
+GraphQL operates in three key layers:
+
+1. Introspection
+
+   - Used to discover the schema (__schema, __type, etc.)
+
+   - May or may not be accessible depending on backend configuration
+
+2. Validation
+
+   - Ensures the query matches the schema types and argument definitions
+
+   - Happens before any resolver is called
+
+  3. Execution (Resolvers)
+
+     - Where the actual logic and authorization checks happen
+
+     - This is where "not authorized" errors are generated
+
+---
+**📌 Decision Flow — Understanding GraphQL Server Responses**
+```
+📌 Interpreting GraphQL Mutation Responses
+
+1️⃣ Validation Errors (400 BAD REQUEST)
+───────────────────────────────────────
+Example:
+{
+  "errors": [
+    { "message": "Unknown argument 'input' on field ..." },
+    { "message": "Field 'host' of type 'String!' is required ..." }
+  ]
+}
+✔️ This means:
+- The mutation exists and is reachable
+- The current user is allowed to invoke it
+- The error is due to incorrect format, not authorization
+
+🛠️ Action: Fix argument structure or types in the mutation
+
+2️⃣ Authorization Errors (403 / 401 or GraphQL error)
+───────────────────────────────────────
+Example:
+{
+  "errors": [{
+    "message": "Not authorized",
+    "extensions": { "code": "UNAUTHENTICATED" }
+  }]
+}
+Or HTTP-level errors:
+- 401 Unauthorized
+- 403 Forbidden
+
+❌ This means:
+- The mutation exists, but the current user is **not authorized**
+- The resolver explicitly blocks execution
+
+🛠️ Action: Authenticate or escalate privileges
+
+3️⃣ Mutation Hidden in Introspection
+───────────────────────────────────────
+❌ The mutation is **not visible** in the schema at all
+
+🔐 Indicates:
+- Schema-level authorization
+- Backend filters the schema based on user roles
+
+🛠️ Action: Look for roles or users with broader access
+```
+---
+**📚 Recommended References**
+
+| Resource                                                                                     | Description                                                        |
+|----------------------------------------------------------------------------------------------|--------------------------------------------------------------------|
+| [GraphQL Specification](https://spec.graphql.org)                                            | Official spec covering execution, validation, types                |
+| [Apollo Server Security Docs](https://www.apollographql.com/docs/apollo-server/security/authentication/) | Explains resolver-based authentication and schema control          |
+| [OWASP GraphQL Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Security_Cheat_Sheet.html) | Great practical advice for securing GraphQL                        |
+| [Graphene Python Docs – Auth](https://docs.graphene-python.org/en/latest/execution/authentication/) | Shows how auth is applied in resolvers (Python context)            |
+
+
+#### Note
 As always, this tool could give false-positives since there could be tricky mutations which have to send very specific values. 
