@@ -8,7 +8,7 @@ GraphQL Authorization Tester is a tool that automates the testing of GraphQL mut
 - Identify allowed and forbidden mutations.  
 - Works with any GraphQL endpoint.  
 - Easy to install and use.  
-- Easily integrates with Burp Suite for proxying and debugging, with no additional configuration required.
+- Easily integrates with Burp Suite, CAIDO, or any toolset you use for proxying and debugging, with no additional configuration required.
 ---
 
 **🔁 Traffic Flow Diagram**
@@ -40,7 +40,7 @@ GraphQL Authorization Tester is a tool that automates the testing of GraphQL mut
 ```
 The tool automatically extracts the target endpoint, headers, and body from the request file — allowing you to replay traffic exactly as Burp Suite captured it.
 
-If Burp Suite is set up to listen on a proxy (e.g., 127.0.0.1:8080) and is configured to forward traffic through a SOCKS proxy (such as an SSH tunnel), your requests will seamlessly be visible in Burp without any extra flags.
+If your toolset is set up to listen on a proxy (e.g., 127.0.0.1:8080) and is configured to forward traffic through a SOCKS proxy (such as an SSH tunnel), your requests will seamlessly be visible in Burp without any extra flags.
 
 ## 📥 Installation  
 You can install the tool directly using `go install`:  
@@ -62,7 +62,7 @@ source ~/.zshrc
 
 ## Usage
 Once you have detected a POST request to a GraphQL endpoint, run `gqlms --help`. 
-- ⚠️ The `request.txt` must be in Burp Suite's format.
+- ⚠️ The `request.txt` must be in Burp Suite's or CAIDO's format.
 - Use `-r` to specify the path to your raw HTTP request file, e.g.:
   ```sh
   gqlms -r request.txt
