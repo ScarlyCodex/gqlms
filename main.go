@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/schollz/progressbar/v3"
 )
 
 // Tipos
@@ -174,19 +175,37 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 	defer unallowedFile.Close()
 	unallowedWriter := bufio.NewWriter(unallowedFile)
 
-	for i, mutation := range mutations {
-		fmt.Printf("\r🔄 Testing mutation: %s (%d/%d)", mutation.Name, i+1, len(mutations))
+	bar := progressbar.NewOptions(len(mutations),
+	progressbar.OptionSetDescription("🔄 Testing mutations"),
+	progressbar.OptionSetTheme(progressbar.Theme{
+		Saucer:        "🟩", // Filled part
+		SaucerHead:    "🟢",
+		SaucerPadding: "⬜", // Empty part
+		BarStart:      "|",
+		BarEnd:        "|",
+	}),
+	progressbar.OptionSetWidth(40),
+	progressbar.OptionShowCount(),
+	progressbar.OptionSetPredictTime(true),
+	progressbar.OptionSetElapsedTime(true),
+)
+
+	for _, mutation := range mutations {
+		//fmt.Printf("\n🧪 Mutation: %s\n", mutation.Name)
+		bar.Describe(fmt.Sprintf("🔄 %s", mutation.Name))
 
 		payload := buildMutationPayload(mutation, endpoint, headers, baseRequestBody)
 		resp, err := sendRequest(endpoint, headers, payload, proxy, useProxy)
+
 		if err != nil || containsDeniedMessage(resp) {
 			unallowedWriter.WriteString(mutation.Name + "\n")
 			unallowedWriter.Flush()
-			continue
+		} else {
+			allowedWriter.WriteString(mutation.Name + "\n")
+			allowedWriter.Flush()
 		}
 
-		allowedWriter.WriteString(mutation.Name + "\n")
-		allowedWriter.Flush()
+		bar.Add(1)
 		time.Sleep(time.Duration(delay) * time.Second)
 	}
 
@@ -275,7 +294,7 @@ func parseRequestFile(filePath string, useSSL bool) (string, map[string]string, 
 
 	scanner := bufio.NewScanner(file)
 	headers := make(map[string]string)
-	var endpoint string
+	var endpointPath string
 	var body strings.Builder
 	isBody := false
 
@@ -295,23 +314,14 @@ func parseRequestFile(filePath string, useSSL bool) (string, map[string]string, 
 		if strings.HasPrefix(line, "POST") {
 			parts := strings.Fields(line)
 			if len(parts) > 1 {
-				endpoint = parts[1]
-				if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-					scheme := "https"
-					if !useSSL {
-						scheme = "http"
-					}
-					if host, exists := headers["Host"]; exists {
-						endpoint = fmt.Sprintf("%s://%s%s", scheme, host, endpoint)
-					} else {
-						return "", nil, "", fmt.Errorf("❌ No Host header found, can't determine endpoint")
-					}
-				}
+				endpointPath = parts[1]
 			}
-		} else if strings.Contains(line, ": ") {
-			parts := strings.SplitN(line, ": ", 2)
+		} else if strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
-				headers[parts[0]] = parts[1]
+				key := strings.TrimSpace(parts[0])
+				val := strings.TrimSpace(parts[1])
+				headers[http.CanonicalHeaderKey(key)] = val
 			}
 		}
 	}
@@ -320,10 +330,24 @@ func parseRequestFile(filePath string, useSSL bool) (string, map[string]string, 
 		return "", nil, "", err
 	}
 
-	if endpoint == "" {
-		return "", nil, "", fmt.Errorf("❌ No valid endpoint extracted from request.txt")
+	if endpointPath == "" {
+		return "", nil, "", fmt.Errorf("❌ No endpoint path found in request file")
 	}
 
-	return endpoint, headers, body.String(), nil
+	// Construir endpoint completo
+	if !strings.HasPrefix(endpointPath, "http://") && !strings.HasPrefix(endpointPath, "https://") {
+		scheme := "https"
+		if !useSSL {
+			scheme = "http"
+		}
+		host, exists := headers["Host"]
+		if !exists {
+			return "", nil, "", fmt.Errorf("❌ No Host header found, can't determine endpoint")
+		}
+		endpointPath = fmt.Sprintf("%s://%s%s", scheme, host, endpointPath)
+	}
+
+	return endpointPath, headers, body.String(), nil
 }
+
 
