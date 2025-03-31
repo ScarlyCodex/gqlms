@@ -42,12 +42,25 @@ Once you have detected a POST request to a GraphQL endpoint, run `gqlms --help`.
 This delay helps avoid rate-limiting or detection by spreading out the requests.
 Set it to 0 for fastest execution — ⚠️ Not recommended on production targets
 
-#### Auth Mode
-If you want to perform unauthenticated checks, make sure to remove authentication headers such as:
-  - `Authorization`
-  - `Cookie`
+#### 🔐 Auth & Unauthenticated Testing
+This is useful for testing privilege escalation scenarios or misconfigured access controls.
 
-#### Proxy Modes
+If you want to test how the GraphQL server behaves without credentials (unauthenticated), but introspection requires authentication, you can use the new -unauth flag:
+```sh
+gqlms -r request.http -unauth=Authorization,Cookie
+```
+- The tool will use the full request (with headers) to fetch the schema
+- Then it will remove the specified headers and test each mutation unauthenticated
+
+⚠️ Important notes:
+- The list is case-sensitive (e.g., Authorization ≠ authorization)
+- Each header name must be comma-separated with no spaces between:
+   ```
+    -unauth=Authorization,Cookie,X-Custom-Token
+   ```
+If any of the specified headers are not present in the request, you'll be prompted whether you wish to continue or not.
+
+#### 🔌 Proxy Modes
 You can optionally route all requests through a proxy (e.g. Burp Suite or another proxy server):
 
 **🔹 No Proxy (default)**
