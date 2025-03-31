@@ -99,6 +99,7 @@ func main() {
 	requestFile := flag.String("r", "", "Path to the HTTP request file (e.g., request.txt)")
 	delay := flag.Int("t", 1, "Time (in seconds) between each request")
 	useSSL := flag.Bool("ssl", true, "Use HTTPS (default: true). Use -ssl=false to disable SSL resolution")
+	unauthHeaders := flag.String("unauth", "", "Comma-separated list of authentication-related headers to remove after introspection")
 
 	var proxy ProxyFlag
 	flag.Var(&proxy, "proxy", "Use proxy. Use -proxy= (default: http://127.0.0.1:8080) or -proxy=http://custom:port")
@@ -128,7 +129,53 @@ func main() {
 		fmt.Println(" → No proxy in use")
 	}
 
+	// Parse unauth headers if set
+	var unauthList []string
+	if *unauthHeaders != "" {
+		unauthList = strings.Split(*unauthHeaders, ",")
+		for i := range unauthList {
+			unauthList[i] = strings.TrimSpace(unauthList[i])
+		}
+
+		// Warn if headers not found
+		missing := []string{}
+		for _, h := range unauthList {
+			if _, ok := headers[h]; !ok {
+				missing = append(missing, h)
+			}
+		}
+
+		if len(missing) > 0 {
+			fmt.Printf("⚠️  The following headers were not found in the request: %v\n", missing)
+			fmt.Print("Do you want to continue anyway? [Y/n]: ")
+			var response string
+			fmt.Scanln(&response)
+
+			switch strings.ToLower(response) {
+			case "y":
+				// continue
+			case "n":
+				fmt.Println("🛑 Aborting.")
+				os.Exit(0)
+			default:
+				fmt.Println("❌ Invalid input. Please use Y or n.")
+				os.Exit(1)
+			}
+		}
+	}
+
+	// Step 1: get schema with auth
 	mutations := getMutations(endpoint, headers, proxy.URL, proxy.Enabled)
+
+	// Step 2: remove auth headers for unauth testing
+	if len(unauthList) > 0 {
+		fmt.Println("🔓 Switching to unauthenticated mode. Removing headers:", unauthList)
+		for _, h := range unauthList {
+			delete(headers, h)
+		}
+	}
+
+	// Step 3: test mutations unauthenticated
 	testMutations(mutations, endpoint, headers, *delay, baseRequestBody, proxy.URL, proxy.Enabled)
 }
 
@@ -167,6 +214,8 @@ func getMutations(endpoint string, headers map[string]string, proxy string, useP
 
 // Test mutations
 func testMutations(mutations []Mutation, endpoint string, headers map[string]string, delay int, baseRequestBody string, proxy string, useProxy bool) {
+	allowedCount := 0
+	unallowedCount := 0
 	allowedFile, _ := os.Create("allowedMutations.txt")
 	defer allowedFile.Close()
 	allowedWriter := bufio.NewWriter(allowedFile)
@@ -200,9 +249,11 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 		if err != nil || containsDeniedMessage(resp) {
 			unallowedWriter.WriteString(mutation.Name + "\n")
 			unallowedWriter.Flush()
+			unallowedCount++
 		} else {
 			allowedWriter.WriteString(mutation.Name + "\n")
 			allowedWriter.Flush()
+			allowedCount++
 		}
 
 		bar.Add(1)
@@ -210,6 +261,10 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 	}
 
 	fmt.Println("\n✅ Authorization testing completed!")
+	fmt.Printf("\n📊 Summary:\n")
+	fmt.Printf("  ✅ Allowed:     %d\n", allowedCount)
+	fmt.Printf("  ❌ Unauthorized: %d\n", unallowedCount)
+	fmt.Printf("  📦 Total tested: %d\n\n", allowedCount+unallowedCount)
 }
 
 // Build GraphQL mutation payload
