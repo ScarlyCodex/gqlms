@@ -97,6 +97,7 @@ func main() {
 
 	requestFile := flag.String("r", "", "Path to the HTTP request file (e.g., request.txt)")
 	delay := flag.Int("t", 1, "Time (in seconds) between each request")
+	useSSL := flag.Bool("ssl", true, "Use HTTPS (default: true). Use -ssl=false to disable SSL resolution")
 
 	var proxy ProxyFlag
 	flag.Var(&proxy, "proxy", "Use proxy. Use -proxy= (default: http://127.0.0.1:8080) or -proxy=http://custom:port")
@@ -108,7 +109,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	endpoint, headers, baseRequestBody, err := parseRequestFile(*requestFile)
+	endpoint, headers, baseRequestBody, err := parseRequestFile(*requestFile, *useSSL)
 	if err != nil {
 		fmt.Printf("Error reading request file: %v\n", err)
 		os.Exit(1)
@@ -264,8 +265,8 @@ func sendRequest(endpoint string, headers map[string]string, payload []byte, pro
 	return resp, nil
 }
 
-// Parse request.txt file
-func parseRequestFile(filePath string) (string, map[string]string, string, error) {
+// Parse request.http file
+func parseRequestFile(filePath string, useSSL bool) (string, map[string]string, string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", nil, "", err
@@ -295,6 +296,17 @@ func parseRequestFile(filePath string) (string, map[string]string, string, error
 			parts := strings.Fields(line)
 			if len(parts) > 1 {
 				endpoint = parts[1]
+				if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+					scheme := "https"
+					if !useSSL {
+						scheme = "http"
+					}
+					if host, exists := headers["Host"]; exists {
+						endpoint = fmt.Sprintf("%s://%s%s", scheme, host, endpoint)
+					} else {
+						return "", nil, "", fmt.Errorf("❌ No Host header found, can't determine endpoint")
+					}
+				}
 			}
 		} else if strings.Contains(line, ": ") {
 			parts := strings.SplitN(line, ": ", 2)
@@ -308,21 +320,10 @@ func parseRequestFile(filePath string) (string, map[string]string, string, error
 		return "", nil, "", err
 	}
 
-	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		if host, exists := headers["Host"]; exists {
-			if strings.Contains(host, ":443") || strings.HasSuffix(host, "https") {
-				endpoint = "https://" + host + endpoint
-			} else {
-				endpoint = "http://" + host + endpoint
-			}
-		} else {
-			return "", nil, "", fmt.Errorf("❌ No Host header found, can't determine endpoint")
-		}
-	}
-
 	if endpoint == "" {
 		return "", nil, "", fmt.Errorf("❌ No valid endpoint extracted from request.txt")
 	}
 
 	return endpoint, headers, body.String(), nil
 }
+
