@@ -40,7 +40,7 @@ Once you have detected a POST request to a GraphQL endpoint, run `gqlms --help`.
   gqlms -r request.http -t 0
   ```
 This delay helps avoid rate-limiting or detection by spreading out the requests.
-Set it to 0 for fastest execution — ⚠️ Not recommended on production targets.
+Set it to 0 for fastest execution — ⚠️ Not recommended on production targets
 
 #### Auth Mode
 If you want to perform unauthenticated checks, make sure to remove authentication headers such as:
@@ -62,6 +62,33 @@ gqlms -r request.http -t 2 -proxy=
 ```sh
 gqlms -r request.http -t 3 -proxy=http://192.168.1.100:8888
 ```
+#### 🌐 HTTPS Support (`-ssl` flag)
+
+By default, the tool assumes GraphQL endpoints use HTTPS.
+
+- If the URL in your `request.http` does not specify a protocol (`http://` or `https://`), the tool will **automatically assume `https://`**.
+
+- To override this behavior and force HTTP (e.g., in a local lab), use:
+```sh
+gqlms -r request.http -ssl=false
+```
+
+
+##### 📄 Output Files
+After the tool completes its testing phase—three `.txt` files will be created in your current working directory:
+
+- `allMutations.txt`  
+  Contains all mutation names discovered via GraphQL introspection.
+
+- `allowedMutations.txt`  
+  Lists the mutations that were accessible (i.e., not blocked by authorization logic).
+
+- `unallowedMutations.txt`  
+  Lists the mutations that were **restricted** (i.e., returned authorization errors or access was denied).
+
+You can review these files to quickly understand which parts of the GraphQL API are exposed to the current user context.
+
+
 ## 🔐 Authorization Logic in GraphQL Endpoints
 
 ### Is this Authorization Logic Always Applicable in GraphQL Endpoints?
