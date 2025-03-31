@@ -11,11 +11,6 @@ GraphQL Authorization Tester is a tool that automates the testing of GraphQL mut
 - Easily integrates with Burp Suite, CAIDO, or any toolset you use for proxying and debugging, with no additional configuration required.
 
 ## 📥 Installation  
-You can install the tool directly using `go install`:  
-
-```sh
-go install github.com/ScarlyCodex/gqlms@latest
-```
 
 Make sure `$HOME/go/bin/` is in your `$PATH`:
 ```sh
@@ -27,7 +22,10 @@ To do this permanently, you can add it to your `.bashrc` or `.zshrc`:
 echo 'export PATH=$HOME/go/bin:$PATH' >> ~/.zshrc
 source ~/.zshrc
 ```
-
+Finally — you install the tool directly using `go install`:
+```sh
+go install github.com/ScarlyCodex/gqlms@latest
+```
 ## Usage
 Once you have detected a POST request to a GraphQL endpoint, run `gqlms --help`. 
 - ⚠️ The `request.http` must be in raw HTTP format as exported from tools like Burp Suite, CAIDO, or similar.
