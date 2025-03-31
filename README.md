@@ -30,16 +30,16 @@ source ~/.zshrc
 
 ## Usage
 Once you have detected a POST request to a GraphQL endpoint, run `gqlms --help`. 
-- ⚠️ The `request.txt` must be in raw HTTP format as exported from tools like Burp Suite, CAIDO, or similar.
+- ⚠️ The `request.http` must be in raw HTTP format as exported from tools like Burp Suite, CAIDO, or similar.
 
 #### Required Options
 - Use `-r` to specify the path to your raw HTTP request file, e.g.:
   ```sh
-  gqlms -r request.txt
+  gqlms -r request.http
   ```
 - Use `-t` to define the delay between each request in seconds (default is 1).
   ```sh
-  gqlms -r request.txt -t 0
+  gqlms -r request.http -t 0
   ```
 This delay helps avoid rate-limiting or detection by spreading out the requests.
 Set it to 0 for fastest execution — ⚠️ Not recommended on production targets.
@@ -54,15 +54,15 @@ You can optionally route all requests through a proxy (e.g. Burp Suite or anothe
 
 **🔹 No Proxy (default)**
 ```sh
-gqlms -r request.txt -t 1
+gqlms -r request.http -t 1
 ```
 **🔹 Use default proxy (`http://127.0.0.1:8080`)**
 ```sh
-gqlms -r request.txt -t 2 -proxy=
+gqlms -r request.http -t 2 -proxy=
 ```
 **🔹 Use a custom proxy**
 ```sh
-gqlms -r request.txt -t 3 -proxy=http://192.168.1.100:8888
+gqlms -r request.http -t 3 -proxy=http://192.168.1.100:8888
 ```
 ## 🔐 Authorization Logic in GraphQL Endpoints
 
