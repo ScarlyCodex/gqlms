@@ -22,7 +22,7 @@ To do this permanently, you can add it to your `.bashrc` or `.zshrc`:
 echo 'export PATH=$HOME/go/bin:$PATH' >> ~/.zshrc
 source ~/.zshrc
 ```
-Finally — you install the tool directly using `go install`:
+Finally — you can install the tool directly using `go install`:
 ```sh
 go install github.com/ScarlyCodex/gqlms@latest
 ```
