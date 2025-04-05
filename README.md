@@ -30,19 +30,23 @@ go install github.com/ScarlyCodex/gqlms@latest
 Once you have detected a POST request to a GraphQL endpoint, run `gqlms --help`. 
 - ⚠️ The `request.http` must be in raw HTTP format as exported from tools like Burp Suite, CAIDO, or similar.
 
-#### Required Options
+#### Only Required Option
 - Use `-r` to specify the path to your raw HTTP request file, e.g.:
+  
   ```sh
   gqlms -r request.http
   ```
+
+##### ⌛ Timing delay — Between each request
 - Use `-t` to define the delay between each request in seconds (default is 1).
+  
   ```sh
   gqlms -r request.http -t 0
   ```
 This delay helps avoid rate-limiting or detection by spreading out the requests.
 Set it to 0 for fastest execution — ⚠️ Not recommended on production targets
 
-#### 🔐 Auth & Unauthenticated Testing
+##### 🔐 Auth & Unauthenticated Testing
 This is useful for testing privilege escalation scenarios or misconfigured access controls.
 
 If you want to test how the GraphQL server behaves without credentials (unauthenticated), but introspection requires authentication, you can use the new -unauth flag:
@@ -60,7 +64,7 @@ gqlms -r request.http -unauth=Authorization,Cookie
    ```
 If any of the specified headers are not present in the request, you'll be prompted whether you wish to continue or not.
 
-#### 🔌 Proxy Modes
+##### 🔌 Proxy Modes
 You can optionally route all requests through a proxy (e.g. Burp Suite or another proxy server):
 
 **🔹 No Proxy (default)**
@@ -75,7 +79,7 @@ gqlms -r request.http -t 2 -proxy=
 ```sh
 gqlms -r request.http -t 3 -proxy=http://192.168.1.100:8888
 ```
-#### 🌐 HTTPS Support (`-ssl` flag)
+##### 🌐 HTTPS Support (`-ssl` flag)
 
 By default, the tool assumes GraphQL endpoints use HTTPS.
 
@@ -87,7 +91,7 @@ gqlms -r request.http -ssl=false
 ```
 
 
-##### 📄 Output Files
+###### 📄 Output Files
 After the tool completes its testing phase—three `.txt` files will be created in your current working directory:
 
 - `allMutations.txt`  
