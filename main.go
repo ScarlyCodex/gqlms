@@ -17,21 +17,23 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
-// Tipos
+// GraphQLType es un tipo genérico para la información de introspección.
+type GraphQLType struct {
+	Kind   string         `json:"kind"`
+	Name   string         `json:"name"`
+	OfType *GraphQLType   `json:"ofType,omitempty"`
+}
+
+// Mutation representa una mutación GraphQL.
 type Mutation struct {
 	Name string `json:"name"`
 	Args []struct {
-		Name string `json:"name"`
-		Type struct {
-			Name   string `json:"name"`
-			Kind   string `json:"kind"`
-			OfType *struct {
-				Name string `json:"name"`
-			} `json:"ofType"`
-		} `json:"type"`
+		Name string      `json:"name"`
+		Type GraphQLType `json:"type"`
 	} `json:"args"`
 }
 
+// IntrospectionResponse representa la respuesta de la introspección para las mutaciones.
 type IntrospectionResponse struct {
 	Data struct {
 		Schema struct {
@@ -39,6 +41,22 @@ type IntrospectionResponse struct {
 				Fields []Mutation `json:"fields"`
 			} `json:"mutationType"`
 		} `json:"__schema"`
+	} `json:"data"`
+}
+
+// InputField representa un campo de un input object.
+type InputField struct {
+	Name string      `json:"name"`
+	Type GraphQLType `json:"type"`
+}
+
+// IntrospectionInputResponse representa la respuesta de la introspección de un input type.
+type IntrospectionInputResponse struct {
+	Data struct {
+		Type struct {
+			Name        string       `json:"name"`
+			InputFields []InputField `json:"inputFields"`
+		} `json:"__type"`
 	} `json:"data"`
 }
 
@@ -79,7 +97,8 @@ func (p *ProxyFlag) Set(value string) error {
 
 // Banner
 func printBanner() {
-	color.Magenta(`
+	astraMagenta := color.RGB(148,68,180)
+	astraMagenta.Println(`
  #####   #####  #                     
 #     # #     # #       #    #  ####  
 #       #     # #       ##  ## #      
@@ -164,10 +183,10 @@ func main() {
 		}
 	}
 
-	// Step 1: get schema with auth
+	// Step 1: obtener el schema autenticado
 	mutations := getMutations(endpoint, headers, proxy.URL, proxy.Enabled)
 
-	// Step 2: remove auth headers for unauth testing
+	// Step 2: remover headers para pruebas sin auth
 	if len(unauthList) > 0 {
 		fmt.Println("🔓 Switching to unauthenticated mode. Removing headers:", unauthList)
 		for _, h := range unauthList {
@@ -175,11 +194,11 @@ func main() {
 		}
 	}
 
-	// Step 3: test mutations unauthenticated
+	// Step 3: probar mutaciones en modo no autenticado
 	testMutations(mutations, endpoint, headers, *delay, baseRequestBody, proxy.URL, proxy.Enabled)
 }
 
-// Get mutations from introspection
+// getMutations obtiene las mutaciones vía introspección
 func getMutations(endpoint string, headers map[string]string, proxy string, useProxy bool) []Mutation {
 	query := map[string]string{
 		"query": `{ __schema { mutationType { fields { name args { name type { name kind ofType { name } } } } } } }`,
@@ -212,7 +231,7 @@ func getMutations(endpoint string, headers map[string]string, proxy string, useP
 	return mutations
 }
 
-// Test mutations
+// testMutations prueba cada mutación y registra el resultado
 func testMutations(mutations []Mutation, endpoint string, headers map[string]string, delay int, baseRequestBody string, proxy string, useProxy bool) {
 	allowedCount := 0
 	unallowedCount := 0
@@ -223,27 +242,30 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 	unallowedFile, _ := os.Create("unallowedMutations.txt")
 	defer unallowedFile.Close()
 	unallowedWriter := bufio.NewWriter(unallowedFile)
+	
+	//magentaSaucer := color.MagentaString("█")
+	//magentaSaucerHead := color.MagentaString("█")
 
 	bar := progressbar.NewOptions(len(mutations),
-	progressbar.OptionSetDescription("🔄 Testing mutations"),
-	progressbar.OptionSetTheme(progressbar.Theme{
-		Saucer:        "🟩", // Filled part
-		SaucerHead:    "🟢",
-		SaucerPadding: "⬜", // Empty part
-		BarStart:      "|",
-		BarEnd:        "|",
-	}),
-	progressbar.OptionSetWidth(40),
-	progressbar.OptionShowCount(),
-	progressbar.OptionSetPredictTime(true),
-	progressbar.OptionSetElapsedTime(true),
-)
+		progressbar.OptionSetDescription("🔄 Testing mutations"),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "🔹",
+			SaucerHead:    "🔸",
+			SaucerPadding: "▫️",
+			BarStart:      "|",
+			BarEnd:        " |",
+		}),
+		progressbar.OptionSetWidth(40),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetPredictTime(true),
+		progressbar.OptionSetElapsedTime(true),
+	)
 
 	for _, mutation := range mutations {
-		//fmt.Printf("\n🧪 Mutation: %s\n", mutation.Name)
 		bar.Describe(fmt.Sprintf("🔄 %s", mutation.Name))
 
-		payload := buildMutationPayload(mutation, endpoint, headers, baseRequestBody)
+		// Se construye el payload dinámicamente usando la información real de los argumentos
+		payload := buildMutationPayload(mutation, endpoint, headers, baseRequestBody, proxy, useProxy)
 		resp, err := sendRequest(endpoint, headers, payload, proxy, useProxy)
 
 		if err != nil || containsDeniedMessage(resp) {
@@ -267,29 +289,130 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 	fmt.Printf("  📦 Total tested: %d\n\n", allowedCount+unallowedCount)
 }
 
-// Build GraphQL mutation payload
-func buildMutationPayload(mutation Mutation, endpoint string, headers map[string]string, baseRequestBody string) []byte {
-	inputType := mutation.Name + "Input"
-	inputFields := map[string]interface{}{"testField": "test_value"} // Placeholder input
+// buildMutationPayload construye el payload de la mutación usando la definición real de argumentos
+func buildMutationPayload(mutation Mutation, endpoint string, headers map[string]string, baseRequestBody string, proxy string, useProxy bool) []byte {
+	variables := make(map[string]interface{})
+	var varDefs []string  // Definiciones de variables para la query
+	var argsList []string // Uso de los argumentos en la mutación
 
-	query := fmt.Sprintf(
-		"mutation %s($input: %s!) { %s(input: $input) { __typename } }",
+	// Iterar sobre cada argumento definido en la mutación
+	for _, arg := range mutation.Args {
+		typeName := resolveTypeName(arg.Type)
+		// Si el argumento es de tipo input (o NON_NULL de input object)
+		if arg.Type.Kind == "INPUT_OBJECT" || (arg.Type.Kind == "NON_NULL" && arg.Type.OfType != nil && arg.Type.OfType.Kind == "INPUT_OBJECT") {
+			inputTypeName := typeName
+			inputFieldsData := getInputFields(inputTypeName, endpoint, headers, proxy, useProxy)
+			dummyObj := make(map[string]interface{})
+			// Generar valores dummy para cada campo del input
+			for _, field := range inputFieldsData {
+				dummyObj[field.Name] = dummyValueForInputField(field.Type)
+			}
+			variables[arg.Name] = dummyObj
+		} else {
+			// Para tipos escalares se asigna un valor dummy simple
+			variables[arg.Name] = dummyValueForScalar(typeName)
+		}
+		// Definir la variable de la query; si el tipo es NON_NULL se añade "!"
+		nonNull := ""
+		if arg.Type.Kind == "NON_NULL" {
+			nonNull = "!"
+		}
+		varDefs = append(varDefs, fmt.Sprintf("$%s: %s%s", arg.Name, typeName, nonNull))
+		argsList = append(argsList, fmt.Sprintf("%s: $%s", arg.Name, arg.Name))
+	}
+
+	query := fmt.Sprintf("mutation %s(%s) { %s(%s) { __typename } }",
 		mutation.Name,
-		inputType,
+		strings.Join(varDefs, ", "),
 		mutation.Name,
+		strings.Join(argsList, ", "),
 	)
 
 	payload := map[string]interface{}{
 		"operationName": mutation.Name,
 		"query":         query,
-		"variables":     map[string]interface{}{"input": inputFields},
+		"variables":     variables,
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
 	return payloadBytes
 }
 
-// Detect if response is unauthorized
+// resolveTypeName obtiene el nombre real de un tipo GraphQL
+func resolveTypeName(t GraphQLType) string {
+	if t.Name != "" {
+		return t.Name
+	}
+	if t.OfType != nil {
+		return t.OfType.Name
+	}
+	return ""
+}
+
+// dummyValueForScalar retorna un valor dummy según el tipo escalar
+func dummyValueForScalar(typeName string) interface{} {
+	switch typeName {
+	case "String", "ID":
+		return "gqlmsTestValue"
+	case "Int":
+		return 0
+	case "Float":
+		return 0.0
+	case "Boolean":
+		return false
+	default:
+		return "gqlmsTestValue"
+	}
+}
+
+// dummyValueForInputField retorna un valor dummy para un campo de input basado en su tipo
+func dummyValueForInputField(t GraphQLType) interface{} {
+	var actualType string
+	if t.Name != "" {
+		actualType = t.Name
+	} else if t.OfType != nil {
+		actualType = t.OfType.Name
+	}
+	return dummyValueForScalar(actualType)
+}
+
+// getInputFields realiza una introspección para obtener los inputFields de un input type
+func getInputFields(typeName, endpoint string, headers map[string]string, proxy string, useProxy bool) []InputField {
+	queryPayload := map[string]interface{}{
+		"query": `query IntrospectType($typeName: String!) {
+  __type(name: $typeName) {
+    name
+    inputFields {
+      name
+      type {
+        kind
+        name
+        ofType {
+          kind
+          name
+        }
+      }
+    }
+  }
+}`,
+		"variables": map[string]interface{}{
+			"typeName": typeName,
+		},
+	}
+	payloadBytes, _ := json.Marshal(queryPayload)
+	resp, err := sendRequest(endpoint, headers, payloadBytes, proxy, useProxy)
+	if err != nil {
+		fmt.Printf("❌ Error introspecting type %s: %v\n", typeName, err)
+		return []InputField{}
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var introspectionResp IntrospectionInputResponse
+	json.Unmarshal(body, &introspectionResp)
+	return introspectionResp.Data.Type.InputFields
+}
+
+// containsDeniedMessage detecta si la respuesta indica acceso no autorizado
 func containsDeniedMessage(resp *http.Response) bool {
 	if resp.StatusCode == 403 || resp.StatusCode == 401 {
 		return true
@@ -300,7 +423,7 @@ func containsDeniedMessage(resp *http.Response) bool {
 	return strings.Contains(strings.ToLower(string(responseBody)), "unauthorized")
 }
 
-// Send HTTP request with optional proxy
+// sendRequest envía una petición HTTP, opcionalmente usando proxy
 func sendRequest(endpoint string, headers map[string]string, payload []byte, proxy string, useProxy bool) (*http.Response, error) {
 	var transport *http.Transport
 
@@ -339,7 +462,7 @@ func sendRequest(endpoint string, headers map[string]string, payload []byte, pro
 	return resp, nil
 }
 
-// Parse request.http file
+// parseRequestFile parsea el archivo .http y extrae endpoint, headers y body
 func parseRequestFile(filePath string, useSSL bool) (string, map[string]string, string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -404,5 +527,3 @@ func parseRequestFile(filePath string, useSSL bool) (string, map[string]string, 
 
 	return endpointPath, headers, body.String(), nil
 }
-
-
