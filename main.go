@@ -165,7 +165,7 @@ func main() {
 		}
 
 		if len(missing) > 0 {
-			fmt.Printf("⚠️  The following headers were not found in the request: %v\n", missing)
+			fmt.Printf("\n⚠️ The following headers were not found in the request: %v\n", missing)
 			fmt.Print("Do you want to continue anyway? [Y/n]: ")
 			var response string
 			fmt.Scanln(&response)
