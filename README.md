@@ -94,6 +94,12 @@ By default, the tool assumes GraphQL endpoints use HTTPS.
 gqlms -r request.http -ssl=false
 ```
 
+**💬 Verbose**
+
+Enable verbose logging of responses for analysis
+```sh
+gqlms -r request.http -v
+```
 ###### 📄 Output Files
 After the tool completes its testing phase—three `.txt` files will be created in your current working directory:
 
