@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -19,9 +20,9 @@ import (
 
 // GraphQLType es un tipo genérico para la información de introspección.
 type GraphQLType struct {
-	Kind   string         `json:"kind"`
-	Name   string         `json:"name"`
-	OfType *GraphQLType   `json:"ofType,omitempty"`
+	Kind   string       `json:"kind"`
+	Name   string       `json:"name"`
+	OfType *GraphQLType `json:"ofType,omitempty"`
 }
 
 // Mutation representa una mutación GraphQL.
@@ -60,17 +61,42 @@ type IntrospectionInputResponse struct {
 	} `json:"data"`
 }
 
-var deniedMessages = []string{
-	"Access denied for this resource",
-	"Unauthorized Access",
-	"UNAUTHORIZED ACCESS",
-	"You do not have permission to access this mutation",
-	"Forbidden resource",
-	"User is not authorized to perform this action",
-	"Permission denied",
-	"Unauthorized",
-	"UNAUTHORIZED",
+// GraphQLResponse es la estructura para parsear respuestas de GraphQL.
+type GraphQLResponse struct {
+	Data   interface{} `json:"data"`
+	Errors []struct {
+		Message    string `json:"message"`
+		Extensions struct {
+			Code string `json:"code"`
+		} `json:"extensions"`
+	} `json:"errors"`
 }
+
+var (
+	// Expresiones regulares para detectar mensajes de error de autorización.
+	unauthorizedRegexes = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)unauthorized`),
+		regexp.MustCompile(`(?i)forbidden`),
+		regexp.MustCompile(`(?i)access denied`),
+		regexp.MustCompile(`(?i)restricted`),
+	}
+
+	// Mensajes predefinidos (por si no se parsea el JSON correctamente)
+	deniedMessages = []string{
+		"Access denied for this resource",
+		"Unauthorized Access",
+		"UNAUTHORIZED ACCESS",
+		"You do not have permission to access this mutation",
+		"Forbidden resource",
+		"User is not authorized to perform this action",
+		"Permission denied",
+		"Unauthorized",
+		"UNAUTHORIZED",
+	}
+
+	// Flag verbose para registro detallado.
+	verbose bool
+)
 
 // ProxyFlag permite usar --proxy [opcional: url]
 type ProxyFlag struct {
@@ -97,7 +123,7 @@ func (p *ProxyFlag) Set(value string) error {
 
 // Banner
 func printBanner() {
-	astraMagenta := color.RGB(148,68,180)
+	astraMagenta := color.RGB(148, 68, 180)
 	astraMagenta.Println(`
  #####   #####  #                     
 #     # #     # #       #    #  ####  
@@ -114,16 +140,16 @@ func printBanner() {
 // Main
 func main() {
 	printBanner()
-
 	requestFile := flag.String("r", "", "Path to the HTTP request file (e.g., request.txt)")
 	delay := flag.Int("t", 1, "Time (in seconds) between each request")
 	useSSL := flag.Bool("ssl", true, "Use HTTPS (default: true). Use -ssl=false to disable SSL resolution")
 	unauthHeaders := flag.String("unauth", "", "Comma-separated list of authentication-related headers to remove after introspection")
+	verboseFlag := flag.Bool("v", false, "Enable verbose logging of responses for analysis")
 
 	var proxy ProxyFlag
 	flag.Var(&proxy, "proxy", "Use proxy. Use -proxy= (default: http://127.0.0.1:8080) or -proxy=http://custom:port")
-
 	flag.Parse()
+	verbose = *verboseFlag
 
 	if *requestFile == "" {
 		fmt.Println("Error: You must provide a path to the request file using -r")
@@ -242,9 +268,6 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 	unallowedFile, _ := os.Create("unallowedMutations.txt")
 	defer unallowedFile.Close()
 	unallowedWriter := bufio.NewWriter(unallowedFile)
-	
-	//magentaSaucer := color.MagentaString("█")
-	//magentaSaucerHead := color.MagentaString("█")
 
 	bar := progressbar.NewOptions(len(mutations),
 		progressbar.OptionSetDescription("🔄 Testing mutations"),
@@ -267,6 +290,13 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 		// Se construye el payload dinámicamente usando la información real de los argumentos
 		payload := buildMutationPayload(mutation, endpoint, headers, baseRequestBody, proxy, useProxy)
 		resp, err := sendRequest(endpoint, headers, payload, proxy, useProxy)
+
+		// Si verbose está activo, se imprime la respuesta completa para análisis
+		if verbose {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			fmt.Printf("\nResponse for mutation %s:\n%s\n", mutation.Name, string(bodyBytes))
+			resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		}
 
 		if err != nil || containsDeniedMessage(resp) {
 			unallowedWriter.WriteString(mutation.Name + "\n")
@@ -412,15 +442,52 @@ func getInputFields(typeName, endpoint string, headers map[string]string, proxy 
 	return introspectionResp.Data.Type.InputFields
 }
 
-// containsDeniedMessage detecta si la respuesta indica acceso no autorizado
+// containsDeniedMessage detecta si la respuesta indica acceso no autorizado utilizando múltiples heurísticas
 func containsDeniedMessage(resp *http.Response) bool {
+	// Si el código HTTP es 401 o 403, consideramos la respuesta como no autorizada.
 	if resp.StatusCode == 403 || resp.StatusCode == 401 {
 		return true
 	}
 
 	responseBody, _ := io.ReadAll(resp.Body)
+	// Restaurar el body para poder ser leído nuevamente.
 	resp.Body = io.NopCloser(bytes.NewBuffer(responseBody))
-	return strings.Contains(strings.ToLower(string(responseBody)), "unauthorized")
+
+	// Intentar parsear la respuesta como JSON
+	var gqlResp GraphQLResponse
+	if err := json.Unmarshal(responseBody, &gqlResp); err == nil {
+		// Si existen errores en la respuesta
+		if len(gqlResp.Errors) > 0 {
+			for _, errObj := range gqlResp.Errors {
+				// Verificar si el código de error indica falta de autorización
+				if errObj.Extensions.Code == "UNAUTHENTICATED" ||
+					errObj.Extensions.Code == "FORBIDDEN" ||
+					errObj.Extensions.Code == "ACCESS_DENIED" {
+					return true
+				}
+				// Verificar con expresiones regulares en el mensaje de error
+				for _, re := range unauthorizedRegexes {
+					if re.MatchString(errObj.Message) {
+						return true
+					}
+				}
+			}
+			// Si no hay datos y hay errores, se asume que es un error de autorización.
+			if gqlResp.Data == nil {
+				return true
+			}
+		}
+	}
+
+	// Fallback: búsqueda simple en el texto completo de la respuesta
+	lowerBody := strings.ToLower(string(responseBody))
+	for _, keyword := range []string{"unauthorized", "forbidden", "access denied", "restricted"} {
+		if strings.Contains(lowerBody, keyword) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // sendRequest envía una petición HTTP, opcionalmente usando proxy
