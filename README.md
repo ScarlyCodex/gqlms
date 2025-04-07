@@ -146,56 +146,72 @@ GraphQL operates in three key layers:
      - This is where "not authorized" errors are generated
 
 ---
-**📌 Decision Flow — Understanding GraphQL Server Responses**
-```
-📌 Interpreting GraphQL Mutation Responses
-
-1️⃣ Validation Errors (400 BAD REQUEST)
-───────────────────────────────────────
-Example:
-{
-  "errors": [
-    { "message": "Unknown argument 'input' on field ..." },
-    { "message": "Field 'host' of type 'String!' is required ..." }
-  ]
-}
-✔️ This means:
-- The mutation exists and is reachable
-- The current user is allowed to invoke it
-- The error is due to incorrect format, not authorization
-
-🛠️ Action: Fix argument structure or types in the mutation
-
-2️⃣ Authorization Errors (403 / 401 or GraphQL error)
-───────────────────────────────────────
-Example:
-{
-  "errors": [{
-    "message": "Not authorized",
-    "extensions": { "code": "UNAUTHENTICATED" }
-  }]
-}
-Or HTTP-level errors:
-- 401 Unauthorized
-- 403 Forbidden
-
-❌ This means:
-- The mutation exists, but the current user is **not authorized**
-- The resolver explicitly blocks execution
-
-🛠️ Action: Authenticate or escalate privileges
-
-3️⃣ Mutation Hidden in Introspection
-───────────────────────────────────────
-❌ The mutation is **not visible** in the schema at all
-
-🔐 Indicates:
-- Schema-level authorization
-- Backend filters the schema based on user roles
-
-🛠️ Action: Look for roles or users with broader access
-```
 ---
+**📌 Decision Flow — Understanding GraphQL Server Responses**
+
+Unlike traditional tools that rely only on raw server errors, this tool uses a **multi-layered heuristic analysis** to determine whether a mutation is authorized for the current user context.
+
+It evaluates:
+- Presence of semantic vs authorization errors
+- HTTP status codes (`401`, `403`)
+- `extensions.code` fields in GraphQL errors
+- Common denial patterns in error messages (e.g., "unauthorized", "forbidden")
+- Lack of valid data in the response (`data: null`)
+- Hidden or filtered mutations during introspection
+
+---
+
+### 🔍 Interpreting Results
+
+#### ✅ Allowed Mutation
+
+The mutation is callable by the current user context.
+
+**This means:**
+- The user has sufficient permissions
+- The mutation is visible and reachable
+- No denial patterns were detected in the response
+
+🛠️ **Action:** Use the mutation for further testing (e.g., fuzzing, logic abuse, privilege escalation checks)
+
+---
+
+#### ❌ Unauthorized Mutation (Heuristic Match)
+
+The tool has identified the mutation as **unauthorized** using multiple heuristic signals.
+
+**This may indicate:**
+- The server explicitly blocked execution (HTTP `403`/`401`)
+- GraphQL errors include `UNAUTHENTICATED`, `FORBIDDEN`, or `ACCESS_DENIED`
+- Error messages contain denial patterns like "unauthorized", "forbidden", etc.
+- No data was returned (`data == null`) along with relevant errors
+
+🛠️ **Action:** Try switching credentials, stripping auth headers (with `--unauth`), or testing under higher-privilege roles
+
+---
+
+#### 🕵️ Hidden Mutation (Missing from Introspection)
+
+The mutation is **not visible** in the schema introspection.
+
+🔐 **This usually means:**
+- The backend enforces schema-level visibility rules
+- The current user role cannot introspect restricted operations
+
+🛠️ **Action:** Try introspection with different tokens, users, or environments. You can also brute-force known mutation names manually.
+
+---
+
+### 🚀 Benefits of Heuristic-Based Analysis
+
+- ✔️ More accurate detection — not limited to 403/401 errors
+- ✔️ Finds silent denials or obfuscated error handling
+- ✔️ Works well with custom GraphQL error formats
+- ✔️ Enables comparison between authenticated and unauthenticated modes (`--unauth`)
+
+---
+---
+
 **📚 Recommended References**
 
 | Resource                                                                                     | Description                                                        |
