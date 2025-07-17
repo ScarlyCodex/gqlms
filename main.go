@@ -257,6 +257,33 @@ func getMutations(endpoint string, headers map[string]string, proxy string, useP
 	return mutations
 }
 
+func dummyValueForType(t GraphQLType) interface{} {
+	if t.Kind == "NON_NULL" && t.OfType != nil {
+		return dummyValueForType(*t.OfType)
+	}
+
+	if t.Kind == "LIST" && t.OfType != nil {
+		element := dummyValueForType(*t.OfType)
+		return []interface{}{element, element}
+	}
+
+	switch t.Kind {
+	case "SCALAR":
+		return dummyValueForScalar(t.Name)
+	case "ENUM":
+		return "ENUM_VALUE"
+	case "INPUT_OBJECT":
+		return map[string]interface{}{} // Rellenado dinámicamente
+	default:
+		if t.OfType != nil {
+			return dummyValueForType(*t.OfType)
+		}
+		return "dummy"
+	}
+}
+
+
+
 // testMutations prueba cada mutación y registra el resultado
 func testMutations(mutations []Mutation, endpoint string, headers map[string]string, delay int, baseRequestBody string, proxy string, useProxy bool) {
 	allowedCount := 0
@@ -322,31 +349,30 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 // buildMutationPayload construye el payload de la mutación usando la definición real de argumentos
 func buildMutationPayload(mutation Mutation, endpoint string, headers map[string]string, baseRequestBody string, proxy string, useProxy bool) []byte {
 	variables := make(map[string]interface{})
-	var varDefs []string  // Definiciones de variables para la query
-	var argsList []string // Uso de los argumentos en la mutación
+	var varDefs []string
+	var argsList []string
 
-	// Iterar sobre cada argumento definido en la mutación
 	for _, arg := range mutation.Args {
 		typeName := resolveTypeName(arg.Type)
-		// Si el argumento es de tipo input (o NON_NULL de input object)
+
 		if arg.Type.Kind == "INPUT_OBJECT" || (arg.Type.Kind == "NON_NULL" && arg.Type.OfType != nil && arg.Type.OfType.Kind == "INPUT_OBJECT") {
 			inputTypeName := typeName
 			inputFieldsData := getInputFields(inputTypeName, endpoint, headers, proxy, useProxy)
 			dummyObj := make(map[string]interface{})
-			// Generar valores dummy para cada campo del input
+
 			for _, field := range inputFieldsData {
-				dummyObj[field.Name] = dummyValueForInputField(field.Type)
+				dummyObj[field.Name] = dummyValueForType(field.Type)
 			}
 			variables[arg.Name] = dummyObj
 		} else {
-			// Para tipos escalares se asigna un valor dummy simple
-			variables[arg.Name] = dummyValueForScalar(typeName)
+			variables[arg.Name] = dummyValueForType(arg.Type)
 		}
-		// Definir la variable de la query; si el tipo es NON_NULL se añade "!"
+
 		nonNull := ""
 		if arg.Type.Kind == "NON_NULL" {
 			nonNull = "!"
 		}
+
 		varDefs = append(varDefs, fmt.Sprintf("$%s: %s%s", arg.Name, typeName, nonNull))
 		argsList = append(argsList, fmt.Sprintf("%s: $%s", arg.Name, arg.Name))
 	}
@@ -367,6 +393,7 @@ func buildMutationPayload(mutation Mutation, endpoint string, headers map[string
 	payloadBytes, _ := json.Marshal(payload)
 	return payloadBytes
 }
+
 
 // resolveTypeName obtiene el nombre real de un tipo GraphQL
 func resolveTypeName(t GraphQLType) string {
@@ -444,47 +471,47 @@ func getInputFields(typeName, endpoint string, headers map[string]string, proxy 
 
 // containsDeniedMessage detecta si la respuesta indica acceso no autorizado utilizando múltiples heurísticas
 func containsDeniedMessage(resp *http.Response) bool {
-	// Si el código HTTP es 401 o 403, consideramos la respuesta como no autorizada.
-	if resp.StatusCode == 403 || resp.StatusCode == 401 {
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		return true
 	}
 
 	responseBody, _ := io.ReadAll(resp.Body)
-	// Restaurar el body para poder ser leído nuevamente.
 	resp.Body = io.NopCloser(bytes.NewBuffer(responseBody))
 
-	// Intentar parsear la respuesta como JSON
 	var gqlResp GraphQLResponse
-	if err := json.Unmarshal(responseBody, &gqlResp); err == nil {
-		// Si existen errores en la respuesta
+	if json.Unmarshal(responseBody, &gqlResp) == nil {
 		if len(gqlResp.Errors) > 0 {
 			for _, errObj := range gqlResp.Errors {
-				// Verificar si el código de error indica falta de autorización
-				if errObj.Extensions.Code == "UNAUTHENTICATED" ||
-					errObj.Extensions.Code == "FORBIDDEN" ||
-					errObj.Extensions.Code == "ACCESS_DENIED" {
+				code := strings.ToUpper(errObj.Extensions.Code)
+				if code == "UNAUTHENTICATED" || code == "FORBIDDEN" || code == "ACCESS_DENIED" {
 					return true
 				}
-				// Verificar con expresiones regulares en el mensaje de error
 				for _, re := range unauthorizedRegexes {
 					if re.MatchString(errObj.Message) {
 						return true
 					}
 				}
 			}
-			// Si no hay datos y hay errores, se asume que es un error de autorización.
+
 			if gqlResp.Data == nil {
 				return true
 			}
 		}
 	}
 
-	// Fallback: búsqueda simple en el texto completo de la respuesta
 	lowerBody := strings.ToLower(string(responseBody))
 	for _, keyword := range []string{"unauthorized", "forbidden", "access denied", "restricted"} {
 		if strings.Contains(lowerBody, keyword) {
 			return true
 		}
+	}
+
+	if resp.StatusCode >= 500 {
+		return false
+	}
+
+	if resp.StatusCode == 400 {
+		return false
 	}
 
 	return false
