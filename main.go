@@ -145,7 +145,7 @@ func main() {
 	delay := flag.Int("t", 1, "Time (in seconds) between each request")
 	useSSL := flag.Bool("ssl", true, "Use HTTPS (default: true). Use -ssl=false to disable SSL resolution")
 	unauthHeaders := flag.String("unauth", "", "Comma-separated list of authentication-related headers to remove after introspection")
-	verboseFlag := flag.Bool("v", false, "Enable verbose logging of responses and dump GraphQL queries to disk")
+	verboseFlag := flag.Bool("v", false, "Generate .graphql files with each mutation query")
 
 	var proxy ProxyFlag
 	flag.Var(&proxy, "proxy", "Use proxy. Use -proxy= (default: http://127.0.0.1:8080) or -proxy=http://custom:port")
@@ -186,8 +186,8 @@ func main() {
 		// Warn if headers not found
 		missing := []string{}
 		for _, h := range unauthList {
-			if _, ok := headers[h]; !ok {
-				missing = append(missing, h)
+			if _, ok := headers[http.CanonicalHeaderKey(h)]; !ok {
+    			missing = append(missing, h)
 			}
 		}
 
@@ -337,11 +337,11 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 		resp, err := sendRequest(endpoint, headers, payload, proxy, useProxy)
 
 		// 4) Si verbose, imprimimos la respuesta completa
-		if verbose {
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			fmt.Printf("\nResponse for mutation %s:\n%s\n", mutation.Name, string(bodyBytes))
-			resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		}
+		//if verbose {
+			//bodyBytes, _ := io.ReadAll(resp.Body)
+			//fmt.Printf("\nResponse for mutation %s:\n%s\n", mutation.Name, string(bodyBytes))
+			//resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		//}
 
 		// 5) Clasificación de resultado
 		if err != nil || containsDeniedMessage(resp) {
