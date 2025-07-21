@@ -139,22 +139,38 @@ func printBanner() {
 }
 
 // Main
+var customFailureMessages []string
+
 func main() {
 	printBanner()
+
 	requestFile := flag.String("r", "", "Path to the HTTP request file (e.g., request.txt)")
 	delay := flag.Int("t", 1, "Time (in seconds) between each request")
 	useSSL := flag.Bool("ssl", true, "Use HTTPS (default: true). Use -ssl=false to disable SSL resolution")
-	unauthHeaders := flag.String("unauth", "", "Comma-separated list of authentication-related headers to remove after introspection")
-	verboseFlag := flag.Bool("v", false, "Generate .graphql files with each mutation query")
+	unauthHeaders := flag.String("unauth", "", "Separated list of authentication-related headers to remove (use '|', example: 'Authorization|X-Pwnfox-Color')")
+	verboseFlag := flag.Bool("v", false, "Generate JSON files with each mutation query (verbose files mode)")
+	customFailuresInput := flag.String("cfem", "", "Custom authentication failure messages separated by '|' (example: 'token expired|authentication failed')")
 
 	var proxy ProxyFlag
 	flag.Var(&proxy, "proxy", "Use proxy. Use -proxy= (default: http://127.0.0.1:8080) or -proxy=http://custom:port")
 	flag.Parse()
+
 	verbose = *verboseFlag
 
 	if *requestFile == "" {
 		fmt.Println("Error: You must provide a path to the request file using -r")
 		os.Exit(1)
+	}
+
+	// Procesar -cfem (custom failure messages)
+	if *customFailuresInput != "" {
+		rawMessages := strings.Split(*customFailuresInput, "|")
+		for _, msg := range rawMessages {
+			msg = strings.TrimSpace(msg)
+			if msg != "" {
+				customFailureMessages = append(customFailureMessages, strings.ToLower(msg))
+			}
+		}
 	}
 
 	endpoint, headers, baseRequestBody, err := parseRequestFile(*requestFile, *useSSL)
@@ -178,16 +194,16 @@ func main() {
 	// Parse unauth headers if set
 	var unauthList []string
 	if *unauthHeaders != "" {
-		unauthList = strings.Split(*unauthHeaders, ",")
+		unauthList = strings.Split(*unauthHeaders, "|")
 		for i := range unauthList {
-			unauthList[i] = strings.TrimSpace(unauthList[i])
+			unauthList[i] = http.CanonicalHeaderKey(strings.TrimSpace(unauthList[i]))
 		}
 
 		// Warn if headers not found
 		missing := []string{}
 		for _, h := range unauthList {
 			if _, ok := headers[http.CanonicalHeaderKey(h)]; !ok {
-    			missing = append(missing, h)
+				missing = append(missing, h)
 			}
 		}
 
@@ -224,6 +240,7 @@ func main() {
 	// Step 3: probar mutaciones en modo no autenticado
 	testMutations(mutations, endpoint, headers, *delay, baseRequestBody, proxy.URL, proxy.Enabled)
 }
+
 
 // getMutations obtiene las mutaciones vía introspección
 func getMutations(endpoint string, headers map[string]string, proxy string, useProxy bool) []Mutation {
@@ -311,39 +328,22 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 	for _, mutation := range mutations {
 		bar.Describe(fmt.Sprintf("🔄 %s", mutation.Name))
 
-		// 1) Construcción del payload dinámico
+		// Construir el payload de la mutación
 		payload := buildMutationPayload(mutation, endpoint, headers, baseRequestBody, proxy, useProxy)
 
-		// 2) Si verbose, volcamos solo la query a disco
+		// Si verbose está activo, guardar el JSON enviado como archivo
 		if verbose {
-			dir := "mutation_queries"
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				fmt.Printf("⚠️ No pude crear %s: %v\n", dir, err)
-			} else {
-				var tmp struct{ Query string `json:"query"` }
-				if err := json.Unmarshal(payload, &tmp); err != nil {
-					fmt.Printf("⚠️ Error parseando payload JSON para %s: %v\n", mutation.Name, err)
-				} else {
-					filePath := filepath.Join(dir, mutation.Name+".graphql")
-					content := tmp.Query + "\n"
-					if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-						fmt.Printf("⚠️ Error escribiendo %s: %v\n", filePath, err)
-					}
-				}
-			}
+			dir := "mutation_payloads"
+			os.MkdirAll(dir, 0755)
+
+			filePath := filepath.Join(dir, mutation.Name+".json")
+			os.WriteFile(filePath, payload, 0644)
 		}
 
-		// 3) Envío de la petición
+		// Enviar la petición
 		resp, err := sendRequest(endpoint, headers, payload, proxy, useProxy)
 
-		// 4) Si verbose, imprimimos la respuesta completa
-		//if verbose {
-			//bodyBytes, _ := io.ReadAll(resp.Body)
-			//fmt.Printf("\nResponse for mutation %s:\n%s\n", mutation.Name, string(bodyBytes))
-			//resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		//}
-
-		// 5) Clasificación de resultado
+		// Evaluar respuesta: ¿unallowed o allowed?
 		if err != nil || containsDeniedMessage(resp) {
 			unallowedWriter.WriteString(mutation.Name + "\n")
 			unallowedWriter.Flush()
@@ -364,6 +364,7 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 	fmt.Printf("  ❌ Unauthorized: %d\n", unallowedCount)
 	fmt.Printf("  📦 Total tested: %d\n\n", allowedCount+unallowedCount)
 }
+
 
 // buildMutationPayload construye el payload de la mutación usando la definición real de argumentos
 func buildMutationPayload(mutation Mutation, endpoint string, headers map[string]string, baseRequestBody string, proxy string, useProxy bool) []byte {
@@ -474,8 +475,21 @@ func containsDeniedMessage(resp *http.Response) bool {
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		return true
 	}
+
 	responseBody, _ := io.ReadAll(resp.Body)
 	resp.Body = io.NopCloser(bytes.NewBuffer(responseBody))
+
+	denyPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)unauthorized`),
+		regexp.MustCompile(`(?i)forbidden`),
+		regexp.MustCompile(`(?i)access denied`),
+		regexp.MustCompile(`(?i)restricted`),
+		regexp.MustCompile(`(?i)authentication.*required`),
+		regexp.MustCompile(`(?i)auth.*required`),
+		regexp.MustCompile(`(?i)invalid token`),
+		regexp.MustCompile(`(?i)session expired`),
+		regexp.MustCompile(`(?i)not authorized`),
+	}
 
 	var gqlResp GraphQLResponse
 	if json.Unmarshal(responseBody, &gqlResp) == nil {
@@ -485,29 +499,56 @@ func containsDeniedMessage(resp *http.Response) bool {
 				if code == "UNAUTHENTICATED" || code == "FORBIDDEN" || code == "ACCESS_DENIED" {
 					return true
 				}
-				for _, re := range unauthorizedRegexes {
-					if re.MatchString(errObj.Message) {
+
+				lowerMsg := strings.ToLower(errObj.Message)
+
+				// Evaluar patrones predefinidos
+				for _, re := range denyPatterns {
+					if re.MatchString(lowerMsg) {
 						return true
 					}
 				}
+
+				// Evaluar cadenas personalizadas (-cfem)
+				for _, msg := range customFailureMessages {
+					if strings.Contains(lowerMsg, msg) {
+						return true
+					}
+				}
+
+				// Verbose opcional para mensajes no clasificados
+				if verbose {
+					fmt.Printf("\n[Info] Unclassified error message:\n%s\n\n", errObj.Message)
+				}
 			}
-			if gqlResp.Data == nil {
-				return true
-			}
+			return false
 		}
 	}
 
+	// Fallback: búsqueda en el cuerpo crudo
 	lowerBody := strings.ToLower(string(responseBody))
-	for _, kw := range []string{"unauthorized", "forbidden", "access denied", "restricted"} {
-		if strings.Contains(lowerBody, kw) {
+
+	for _, re := range denyPatterns {
+		if re.MatchString(lowerBody) {
 			return true
 		}
 	}
 
-	// 400–499 (except 401/403) no indicativo de auth denial; 500+ no se cuenta
-	if resp.StatusCode >= 500 || resp.StatusCode == 400 {
+	for _, msg := range customFailureMessages {
+		if strings.Contains(lowerBody, msg) {
+			return true
+		}
+	}
+
+	// Consideraciones HTTP
+	if resp.StatusCode >= 500 {
 		return false
 	}
+
+	if resp.StatusCode == 400 {
+		return false
+	}
+
 	return false
 }
 
