@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -94,7 +95,7 @@ var (
 		"UNAUTHORIZED",
 	}
 
-	// Flag verbose para registro detallado.
+	// Flag verbose para registro detallado y volcado de queries.
 	verbose bool
 )
 
@@ -144,7 +145,7 @@ func main() {
 	delay := flag.Int("t", 1, "Time (in seconds) between each request")
 	useSSL := flag.Bool("ssl", true, "Use HTTPS (default: true). Use -ssl=false to disable SSL resolution")
 	unauthHeaders := flag.String("unauth", "", "Comma-separated list of authentication-related headers to remove after introspection")
-	verboseFlag := flag.Bool("v", false, "Enable verbose logging of responses for analysis")
+	verboseFlag := flag.Bool("v", false, "Enable verbose logging of responses and dump GraphQL queries to disk")
 
 	var proxy ProxyFlag
 	flag.Var(&proxy, "proxy", "Use proxy. Use -proxy= (default: http://127.0.0.1:8080) or -proxy=http://custom:port")
@@ -261,12 +262,10 @@ func dummyValueForType(t GraphQLType) interface{} {
 	if t.Kind == "NON_NULL" && t.OfType != nil {
 		return dummyValueForType(*t.OfType)
 	}
-
 	if t.Kind == "LIST" && t.OfType != nil {
 		element := dummyValueForType(*t.OfType)
 		return []interface{}{element, element}
 	}
-
 	switch t.Kind {
 	case "SCALAR":
 		return dummyValueForScalar(t.Name)
@@ -281,8 +280,6 @@ func dummyValueForType(t GraphQLType) interface{} {
 		return "dummy"
 	}
 }
-
-
 
 // testMutations prueba cada mutación y registra el resultado
 func testMutations(mutations []Mutation, endpoint string, headers map[string]string, delay int, baseRequestBody string, proxy string, useProxy bool) {
@@ -314,17 +311,39 @@ func testMutations(mutations []Mutation, endpoint string, headers map[string]str
 	for _, mutation := range mutations {
 		bar.Describe(fmt.Sprintf("🔄 %s", mutation.Name))
 
-		// Se construye el payload dinámicamente usando la información real de los argumentos
+		// 1) Construcción del payload dinámico
 		payload := buildMutationPayload(mutation, endpoint, headers, baseRequestBody, proxy, useProxy)
+
+		// 2) Si verbose, volcamos solo la query a disco
+		if verbose {
+			dir := "mutation_queries"
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				fmt.Printf("⚠️ No pude crear %s: %v\n", dir, err)
+			} else {
+				var tmp struct{ Query string `json:"query"` }
+				if err := json.Unmarshal(payload, &tmp); err != nil {
+					fmt.Printf("⚠️ Error parseando payload JSON para %s: %v\n", mutation.Name, err)
+				} else {
+					filePath := filepath.Join(dir, mutation.Name+".graphql")
+					content := tmp.Query + "\n"
+					if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+						fmt.Printf("⚠️ Error escribiendo %s: %v\n", filePath, err)
+					}
+				}
+			}
+		}
+
+		// 3) Envío de la petición
 		resp, err := sendRequest(endpoint, headers, payload, proxy, useProxy)
 
-		// Si verbose está activo, se imprime la respuesta completa para análisis
+		// 4) Si verbose, imprimimos la respuesta completa
 		if verbose {
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			fmt.Printf("\nResponse for mutation %s:\n%s\n", mutation.Name, string(bodyBytes))
 			resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		}
 
+		// 5) Clasificación de resultado
 		if err != nil || containsDeniedMessage(resp) {
 			unallowedWriter.WriteString(mutation.Name + "\n")
 			unallowedWriter.Flush()
@@ -354,12 +373,10 @@ func buildMutationPayload(mutation Mutation, endpoint string, headers map[string
 
 	for _, arg := range mutation.Args {
 		typeName := resolveTypeName(arg.Type)
-
 		if arg.Type.Kind == "INPUT_OBJECT" || (arg.Type.Kind == "NON_NULL" && arg.Type.OfType != nil && arg.Type.OfType.Kind == "INPUT_OBJECT") {
 			inputTypeName := typeName
 			inputFieldsData := getInputFields(inputTypeName, endpoint, headers, proxy, useProxy)
 			dummyObj := make(map[string]interface{})
-
 			for _, field := range inputFieldsData {
 				dummyObj[field.Name] = dummyValueForType(field.Type)
 			}
@@ -367,12 +384,10 @@ func buildMutationPayload(mutation Mutation, endpoint string, headers map[string
 		} else {
 			variables[arg.Name] = dummyValueForType(arg.Type)
 		}
-
 		nonNull := ""
 		if arg.Type.Kind == "NON_NULL" {
 			nonNull = "!"
 		}
-
 		varDefs = append(varDefs, fmt.Sprintf("$%s: %s%s", arg.Name, typeName, nonNull))
 		argsList = append(argsList, fmt.Sprintf("%s: $%s", arg.Name, arg.Name))
 	}
@@ -383,17 +398,14 @@ func buildMutationPayload(mutation Mutation, endpoint string, headers map[string
 		mutation.Name,
 		strings.Join(argsList, ", "),
 	)
-
 	payload := map[string]interface{}{
 		"operationName": mutation.Name,
 		"query":         query,
 		"variables":     variables,
 	}
-
 	payloadBytes, _ := json.Marshal(payload)
 	return payloadBytes
 }
-
 
 // resolveTypeName obtiene el nombre real de un tipo GraphQL
 func resolveTypeName(t GraphQLType) string {
@@ -422,16 +434,6 @@ func dummyValueForScalar(typeName string) interface{} {
 	}
 }
 
-// dummyValueForInputField retorna un valor dummy para un campo de input basado en su tipo
-func dummyValueForInputField(t GraphQLType) interface{} {
-	var actualType string
-	if t.Name != "" {
-		actualType = t.Name
-	} else if t.OfType != nil {
-		actualType = t.OfType.Name
-	}
-	return dummyValueForScalar(actualType)
-}
 
 // getInputFields realiza una introspección para obtener los inputFields de un input type
 func getInputFields(typeName, endpoint string, headers map[string]string, proxy string, useProxy bool) []InputField {
@@ -452,15 +454,13 @@ func getInputFields(typeName, endpoint string, headers map[string]string, proxy 
     }
   }
 }`,
-		"variables": map[string]interface{}{
-			"typeName": typeName,
-		},
+		"variables": map[string]interface{}{"typeName": typeName},
 	}
 	payloadBytes, _ := json.Marshal(queryPayload)
 	resp, err := sendRequest(endpoint, headers, payloadBytes, proxy, useProxy)
 	if err != nil {
 		fmt.Printf("❌ Error introspecting type %s: %v\n", typeName, err)
-		return []InputField{}
+		return nil
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -469,12 +469,11 @@ func getInputFields(typeName, endpoint string, headers map[string]string, proxy 
 	return introspectionResp.Data.Type.InputFields
 }
 
-// containsDeniedMessage detecta si la respuesta indica acceso no autorizado utilizando múltiples heurísticas
+// containsDeniedMessage detecta si la respuesta indica acceso no autorizado
 func containsDeniedMessage(resp *http.Response) bool {
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		return true
 	}
-
 	responseBody, _ := io.ReadAll(resp.Body)
 	resp.Body = io.NopCloser(bytes.NewBuffer(responseBody))
 
@@ -492,7 +491,6 @@ func containsDeniedMessage(resp *http.Response) bool {
 					}
 				}
 			}
-
 			if gqlResp.Data == nil {
 				return true
 			}
@@ -500,57 +498,44 @@ func containsDeniedMessage(resp *http.Response) bool {
 	}
 
 	lowerBody := strings.ToLower(string(responseBody))
-	for _, keyword := range []string{"unauthorized", "forbidden", "access denied", "restricted"} {
-		if strings.Contains(lowerBody, keyword) {
+	for _, kw := range []string{"unauthorized", "forbidden", "access denied", "restricted"} {
+		if strings.Contains(lowerBody, kw) {
 			return true
 		}
 	}
 
-	if resp.StatusCode >= 500 {
+	// 400–499 (except 401/403) no indicativo de auth denial; 500+ no se cuenta
+	if resp.StatusCode >= 500 || resp.StatusCode == 400 {
 		return false
 	}
-
-	if resp.StatusCode == 400 {
-		return false
-	}
-
 	return false
 }
 
 // sendRequest envía una petición HTTP, opcionalmente usando proxy
 func sendRequest(endpoint string, headers map[string]string, payload []byte, proxy string, useProxy bool) (*http.Response, error) {
 	var transport *http.Transport
-
 	if useProxy {
 		proxyURL, err := url.Parse(proxy)
 		if err != nil {
 			return nil, fmt.Errorf("❌ Invalid proxy URL: %v", err)
 		}
-		transport = &http.Transport{
-			Proxy: http.ProxyURL(proxyURL),
-		}
+		transport = &http.Transport{Proxy: http.ProxyURL(proxyURL)}
 	} else {
 		transport = &http.Transport{}
 	}
 
-	client := &http.Client{
-		Transport: transport,
-	}
-
+	client := &http.Client{Transport: transport}
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(payload))
 	if err != nil {
 		return nil, err
 	}
-
-	for key, value := range headers {
-		req.Header.Set(key, value)
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
-
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-
 	responseBody, _ := io.ReadAll(resp.Body)
 	resp.Body = io.NopCloser(bytes.NewBuffer(responseBody))
 	return resp, nil
@@ -572,17 +557,14 @@ func parseRequestFile(filePath string, useSSL bool) (string, map[string]string, 
 
 	for scanner.Scan() {
 		line := scanner.Text()
-
 		if line == "" {
 			isBody = true
 			continue
 		}
-
 		if isBody {
 			body.WriteString(line)
 			continue
 		}
-
 		if strings.HasPrefix(line, "POST") {
 			parts := strings.Fields(line)
 			if len(parts) > 1 {
@@ -591,17 +573,13 @@ func parseRequestFile(filePath string, useSSL bool) (string, map[string]string, 
 		} else if strings.Contains(line, ":") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
-				key := strings.TrimSpace(parts[0])
-				val := strings.TrimSpace(parts[1])
-				headers[http.CanonicalHeaderKey(key)] = val
+				headers[http.CanonicalHeaderKey(strings.TrimSpace(parts[0]))] = strings.TrimSpace(parts[1])
 			}
 		}
 	}
-
 	if err := scanner.Err(); err != nil {
 		return "", nil, "", err
 	}
-
 	if endpointPath == "" {
 		return "", nil, "", fmt.Errorf("❌ No endpoint path found in request file")
 	}
@@ -612,8 +590,8 @@ func parseRequestFile(filePath string, useSSL bool) (string, map[string]string, 
 		if !useSSL {
 			scheme = "http"
 		}
-		host, exists := headers["Host"]
-		if !exists {
+		host, ok := headers["Host"]
+		if !ok {
 			return "", nil, "", fmt.Errorf("❌ No Host header found, can't determine endpoint")
 		}
 		endpointPath = fmt.Sprintf("%s://%s%s", scheme, host, endpointPath)
